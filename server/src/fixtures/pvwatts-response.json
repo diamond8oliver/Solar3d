@@ -1,0 +1,31 @@
+{
+  "inputs": {
+    "system_capacity": 10.4,
+    "lat": 37.4449,
+    "lon": -122.1391,
+    "azimuth": 180,
+    "tilt": 22,
+    "array_type": 1,
+    "module_type": 0,
+    "losses": 14.08
+  },
+  "version": "8.0.0",
+  "station_info": {
+    "lat": 37.4449,
+    "lon": -122.1391,
+    "elev": 9.0,
+    "tz": -8.0,
+    "location": "PALO ALTO",
+    "city": "PALO ALTO",
+    "state": "CA"
+  },
+  "outputs": {
+    "ac_monthly": [980, 1120, 1450, 1620, 1780, 1820, 1850, 1750, 1520, 1280, 1020, 900],
+    "dc_monthly": [1030, 1180, 1530, 1710, 1880, 1920, 1950, 1840, 1600, 1350, 1070, 950],
+    "poa_monthly": [120, 140, 180, 200, 220, 225, 230, 215, 185, 155, 125, 110],
+    "solrad_monthly": [3.87, 5.0, 5.81, 6.67, 7.10, 7.50, 7.42, 6.94, 6.17, 5.0, 4.17, 3.55],
+    "ac_annual": 17090,
+    "solrad_annual": 5.77,
+    "capacity_factor": 18.8
+  }
+}

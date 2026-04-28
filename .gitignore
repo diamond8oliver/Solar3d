@@ -7,6 +7,12 @@ build/
 !.env.example
 *.tsbuildinfo
 .vite/
+
+# stray tsc artifacts from typecheck (vite owns build output)
+client/vite.config.d.ts
+client/vite.config.d.ts.map
+client/vite.config.js
+client/vite.config.js.map
 .DS_Store
 Thumbs.db
 .vscode/
@@ -15,3 +21,4 @@ Thumbs.db
 .agent/
 .agents/
 *.log
+.planning/

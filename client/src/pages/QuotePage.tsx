@@ -1,49 +1,78 @@
-import { useParams } from 'react-router-dom';
-import { useProject } from '../hooks/useProject';
-import { useAnimation } from '../hooks/useAnimation';
-import AddressForm from '../components/AddressForm';
-import SolarViewer from '../components/three/SolarViewer';
-import StatsPanel from '../components/StatsPanel';
+import { useCallback, useRef, useState } from 'react';
+import type {
+  AddressRecord, CameraPreset, HomeSceneState, OverlayName,
+} from '@solar3d/shared';
+import { DEFAULT_SCENE_STATE } from '@solar3d/shared';
+import AddressSearch from '../components/AddressSearch';
+import HomeViewer from '../components/HomeViewer';
+import HomeScenePanel from '../components/HomeScenePanel';
+import ThreeLayoutShell from '../components/ThreeLayoutShell';
+import type { HomeScene } from '../cesium/homeScene';
 
 export default function QuotePage() {
-  const { id, token } = useParams<{ id?: string; token?: string }>();
-  const { project, loading, error, create } = useProject(id, token);
-  const { playing, toggle } = useAnimation();
+  const [state, setState] = useState<HomeSceneState>(DEFAULT_SCENE_STATE);
+  const sceneRef = useRef<HomeScene | null>(null);
 
-  if (error) {
-    return (
-      <div className="max-w-lg mx-auto mt-16 text-center">
-        <p className="text-red-600 text-sm">{error}</p>
-      </div>
-    );
-  }
+  const handleConfirm = (address: AddressRecord) => {
+    setState((s) => ({ ...s, address, loading: true }));
+  };
 
-  // Show form if no project loaded yet
-  if (!project) {
-    return (
-      <div className="max-w-lg mx-auto mt-16">
-        <AddressForm onSubmit={create} loading={loading} />
-      </div>
-    );
+  const handleReady = useCallback((scene: HomeScene, ionTokenAvailable: boolean) => {
+    sceneRef.current = scene;
+    setState((s) => ({ ...s, loading: false, ionTokenAvailable }));
+  }, []);
+
+  const handleToggleOverlay = (name: OverlayName, enabled: boolean) => {
+    sceneRef.current?.toggleOverlay(name, enabled);
+    setState((s) => ({
+      ...s,
+      overlaysEnabled: { ...s.overlaysEnabled, [name]: enabled },
+    }));
+  };
+
+  const handleSetPreset = (preset: CameraPreset) => {
+    if (!state.address) return;
+    sceneRef.current?.flyCameraToPreset(state.address, preset);
+    setState((s) => ({ ...s, cameraPreset: preset }));
+  };
+
+  const handleSetTimeOfDay = (hours: number) => {
+    sceneRef.current?.setTimeOfDay(hours);
+    setState((s) => ({ ...s, timeOfDayHours: hours }));
+  };
+
+  const handleRefocus = () => sceneRef.current?.refocus(state.cameraPreset);
+
+  const handleChangeAddress = () => {
+    sceneRef.current = null;
+    setState(DEFAULT_SCENE_STATE);
+  };
+
+  if (!state.address) {
+    return <AddressSearch onConfirm={handleConfirm} />;
   }
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 p-6 h-[calc(100vh-57px)]">
-      {/* 3D viewer */}
-      <div className="flex-1 min-h-[400px] relative">
-        <SolarViewer project={project} flythrough={playing} />
-        <button
-          onClick={toggle}
-          className="absolute bottom-4 right-4 bg-white/90 hover:bg-white text-sm font-medium text-gray-700 px-3 py-1.5 rounded-md shadow transition-colors"
-        >
-          {playing ? 'Stop Tour' : 'Flythrough'}
-        </button>
-      </div>
-
-      {/* Stats sidebar */}
-      <div className="w-full lg:w-80 flex-shrink-0">
-        <StatsPanel project={project} />
-      </div>
-    </div>
+    <ThreeLayoutShell>
+      <HomeViewer
+        address={state.address}
+        preset={state.cameraPreset}
+        overlays={state.overlaysEnabled}
+        timeOfDayHours={state.timeOfDayHours}
+        onReady={handleReady}
+      />
+      <HomeScenePanel
+        address={state.address}
+        overlays={state.overlaysEnabled}
+        preset={state.cameraPreset}
+        timeOfDayHours={state.timeOfDayHours}
+        ionTokenAvailable={state.ionTokenAvailable}
+        onToggleOverlay={handleToggleOverlay}
+        onSetPreset={handleSetPreset}
+        onSetTimeOfDay={handleSetTimeOfDay}
+        onRefocus={handleRefocus}
+        onChangeAddress={handleChangeAddress}
+      />
+    </ThreeLayoutShell>
   );
 }

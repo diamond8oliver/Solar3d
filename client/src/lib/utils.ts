@@ -1,3 +1,10 @@
+import { type ClassValue, clsx } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
+
 export function formatKwh(kwh: number): string {
   return kwh >= 1000
     ? `${(kwh / 1000).toFixed(1)} MWh`

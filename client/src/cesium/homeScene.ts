@@ -1,7 +1,9 @@
 import * as Cesium from 'cesium';
-import type { AddressRecord, CameraPreset, OverlayName } from '@solar3d/shared';
+import type {
+  AddressRecord, CameraPreset, OverlayName, PanelLayout,
+} from '@solar3d/shared';
 import type { ViewerHandle } from './viewer';
-import { OVERLAY_FACTORIES } from './overlays';
+import { OVERLAY_FACTORIES, panelsOverlayFromLayout } from './overlays';
 import { setTimeOfDay } from './sun';
 
 /**
@@ -15,8 +17,38 @@ export class HomeScene {
     roof: [], panels: [], measurements: [],
   };
   private currentAddress: AddressRecord | null = null;
+  private currentLayout: PanelLayout | null = null;
 
   constructor(private handle: ViewerHandle) {}
+
+  /**
+   * Attach the server-computed PanelLayout. If "panels" overlay is currently
+   * visible, redraw it with the real layout instead of the stub.
+   */
+  setLayout(layout: PanelLayout | null) {
+    this.currentLayout = layout;
+    if (this.overlayEntities.panels.length > 0) {
+      this.redrawOverlay('panels');
+    }
+  }
+
+  private redrawOverlay(name: OverlayName) {
+    if (!this.currentAddress) return;
+    for (const ent of this.overlayEntities[name]) {
+      this.handle.viewer.entities.remove(ent);
+    }
+    this.overlayEntities[name] = this.buildOverlay(name);
+  }
+
+  private buildOverlay(name: OverlayName): Cesium.Entity[] {
+    if (!this.currentAddress) return [];
+    if (name === 'panels' && this.currentLayout) {
+      return panelsOverlayFromLayout(
+        this.handle.viewer, this.currentAddress, this.currentLayout,
+      );
+    }
+    return OVERLAY_FACTORIES[name](this.handle.viewer, this.currentAddress);
+  }
 
   /**
    * Identify the home uniquely by `placeId + lat/lng` (set on the AddressRecord
@@ -110,8 +142,7 @@ export class HomeScene {
     if (!this.currentAddress) return;
     const existing = this.overlayEntities[name];
     if (enabled && existing.length === 0) {
-      this.overlayEntities[name] =
-        OVERLAY_FACTORIES[name](this.handle.viewer, this.currentAddress);
+      this.overlayEntities[name] = this.buildOverlay(name);
     } else if (!enabled && existing.length > 0) {
       for (const ent of existing) this.handle.viewer.entities.remove(ent);
       this.overlayEntities[name] = [];

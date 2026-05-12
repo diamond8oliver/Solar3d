@@ -1,5 +1,5 @@
 import * as Cesium from 'cesium';
-import type { AddressRecord, OverlayName } from '@solar3d/shared';
+import type { AddressRecord, OverlayName, PanelLayout } from '@solar3d/shared';
 
 /**
  * Stub overlays drawn at the home's lat/lng. Real solar panel placement gets
@@ -39,6 +39,11 @@ export function roofOverlay(viewer: Cesium.Viewer, addr: AddressRecord): Cesium.
   return [ent];
 }
 
+/**
+ * Stub panels overlay used when no real PanelLayout is available
+ * (e.g. /api/projects errored, or before the request finishes).
+ * Renders a 4x3 grid of rectangles around the home as a visual placeholder.
+ */
 export function panelsOverlay(viewer: Cesium.Viewer, addr: AddressRecord): Cesium.Entity[] {
   const { lat, lng } = addr.location;
   const { dLat, dLng } = metersToDegrees(1, lat);
@@ -59,19 +64,80 @@ export function panelsOverlay(viewer: Cesium.Viewer, addr: AddressRecord): Cesiu
       const cx = startX + c * (panelW + gap) + panelW / 2;
       const cy = startY + r * (panelH + gap) + panelH / 2;
       out.push(viewer.entities.add({
-        name: `panel-${r}-${c}`,
+        name: `panel-stub-${r}-${c}`,
         rectangle: {
           coordinates: Cesium.Rectangle.fromDegrees(
             lng + dLng * (cx - panelW / 2), lat + dLat * (cy - panelH / 2),
             lng + dLng * (cx + panelW / 2), lat + dLat * (cy + panelH / 2),
           ),
-          material: Cesium.Color.fromCssColorString('#1e3a8a').withAlpha(0.85),
+          material: Cesium.Color.fromCssColorString('#1e3a8a').withAlpha(0.5),
           outline: true,
           outlineColor: Cesium.Color.fromCssColorString('#60a5fa'),
           heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
         },
       }));
     }
+  }
+  return out;
+}
+
+/**
+ * Real panels overlay backed by the server's PanelLayout. Each PanelPosition
+ * is given in local meters relative to the building center. We anchor at
+ * `addr.location` (the user's geocoded address) — for mock-API mode this is
+ * fine; for real Google Solar the building.center may drift a few meters but
+ * the panel cluster still lands on the home.
+ *
+ * Each panel becomes a 4-corner ground polygon. Pitch is intentionally
+ * dropped — we clamp to terrain rather than raise to roof height, which
+ * sidesteps having to align with OSM building roof faces.
+ */
+export function panelsOverlayFromLayout(
+  viewer: Cesium.Viewer,
+  addr: AddressRecord,
+  layout: PanelLayout,
+): Cesium.Entity[] {
+  const { lat: baseLat, lng: baseLng } = addr.location;
+  const cosLat = Math.cos((baseLat * Math.PI) / 180);
+  const halfW = layout.panelWidthMeters / 2;
+  const halfH = layout.panelHeightMeters / 2;
+
+  const out: Cesium.Entity[] = [];
+  for (const p of layout.panels) {
+    const r = p.rotationZ;
+    const cosR = Math.cos(r);
+    const sinR = Math.sin(r);
+
+    const corners: Array<[number, number]> = [
+      [-halfW, -halfH],
+      [ halfW, -halfH],
+      [ halfW,  halfH],
+      [-halfW,  halfH],
+    ];
+
+    const positions: number[] = [];
+    for (const [lx, lz] of corners) {
+      const xRot = lx * cosR - lz * sinR;
+      const zRot = lx * sinR + lz * cosR;
+      const worldX = p.centerX + xRot;
+      const worldZ = p.centerZ + zRot;
+      const lng = baseLng + worldX / (cosLat * 111320);
+      const lat = baseLat + worldZ / 110540;
+      positions.push(lng, lat);
+    }
+
+    out.push(viewer.entities.add({
+      name: `panel-${p.id}`,
+      polygon: {
+        hierarchy: new Cesium.PolygonHierarchy(
+          Cesium.Cartesian3.fromDegreesArray(positions),
+        ),
+        material: Cesium.Color.fromCssColorString('#1e3a8a').withAlpha(0.9),
+        outline: true,
+        outlineColor: Cesium.Color.fromCssColorString('#60a5fa'),
+        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+      },
+    }));
   }
   return out;
 }

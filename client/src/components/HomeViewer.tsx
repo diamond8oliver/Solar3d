@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import type { AddressRecord, CameraPreset, OverlayName } from '@solar3d/shared';
+import type {
+  AddressRecord, CameraPreset, OverlayName, PanelLayout,
+} from '@solar3d/shared';
 import { initViewer, type ViewerHandle } from '../cesium/viewer';
 import { HomeScene } from '../cesium/homeScene';
 
@@ -8,11 +10,12 @@ interface Props {
   preset: CameraPreset;
   overlays: Record<OverlayName, boolean>;
   timeOfDayHours: number;
+  panelLayout: PanelLayout | null;
   onReady: (scene: HomeScene, ionTokenAvailable: boolean) => void;
 }
 
 export default function HomeViewer({
-  address, preset, overlays, timeOfDayHours, onReady,
+  address, preset, overlays, timeOfDayHours, panelLayout, onReady,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const handleRef = useRef<ViewerHandle | null>(null);
@@ -37,6 +40,7 @@ export default function HomeViewer({
 
         await scene.focusHome(address, preset);
         scene.setTimeOfDay(timeOfDayHours);
+        scene.setLayout(panelLayout);
         for (const name of Object.keys(overlays) as OverlayName[]) {
           scene.toggleOverlay(name, overlays[name]);
         }
@@ -60,6 +64,11 @@ export default function HomeViewer({
   useEffect(() => {
     if (sceneRef.current) sceneRef.current.focusHome(address, preset);
   }, [address.placeId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Push the latest server-computed layout into the scene whenever it changes.
+  useEffect(() => {
+    sceneRef.current?.setLayout(panelLayout);
+  }, [panelLayout]);
 
   if (bootError) {
     return (

@@ -5,11 +5,11 @@ import { MockPvwattsClient, RealPvwattsClient } from './clients/pvwatts.client';
 import { InMemoryProjectRepository } from './repositories/project.repository';
 import { ProjectService } from './services/project.service';
 
-const solarClient = config.useMockApis
+const solarClient = config.useMockSolar
   ? new MockGoogleSolarClient()
   : new RealGoogleSolarClient(config.googleSolarApiKey);
 
-const pvwattsClient = config.useMockApis
+const pvwattsClient = config.useMockPvwatts
   ? new MockPvwattsClient()
   : new RealPvwattsClient(config.nrelApiKey);
 
@@ -19,5 +19,6 @@ const app = createApp(service);
 
 app.listen(config.port, () => {
   console.log(`Solar3d server running on http://localhost:${config.port}`);
-  console.log(`Mock APIs: ${config.useMockApis ? 'enabled' : 'disabled'}`);
+  console.log(`Google Solar: ${config.useMockSolar ? 'mock' : 'real'}`);
+  console.log(`PVWatts:      ${config.useMockPvwatts ? 'mock' : 'real'}`);
 });

@@ -1,8 +1,11 @@
 import { motion } from 'motion/react';
 import {
   Home, Sun, LayoutGrid, Ruler, Camera, ChevronsUp, ChevronsDownUp, MapPin,
+  Loader2, Zap,
 } from 'lucide-react';
-import type { AddressRecord, CameraPreset, OverlayName } from '@solar3d/shared';
+import type {
+  AddressRecord, CameraPreset, OverlayName, Project,
+} from '@solar3d/shared';
 
 interface Props {
   address: AddressRecord;
@@ -10,6 +13,8 @@ interface Props {
   preset: CameraPreset;
   timeOfDayHours: number;
   ionTokenAvailable: boolean;
+  project: Project | null;
+  projectError: string | null;
   onToggleOverlay: (name: OverlayName, enabled: boolean) => void;
   onSetPreset: (p: CameraPreset) => void;
   onSetTimeOfDay: (h: number) => void;
@@ -19,8 +24,15 @@ interface Props {
 
 export default function HomeScenePanel({
   address, overlays, preset, timeOfDayHours, ionTokenAvailable,
+  project, projectError,
   onToggleOverlay, onSetPreset, onSetTimeOfDay, onRefocus, onChangeAddress,
 }: Props) {
+  const layoutLoading = !project && !projectError;
+  const panelsLabel = project
+    ? `Solar panels (${project.panelLayout.totalPanelCount})`
+    : layoutLoading
+      ? 'Solar panels (loading…)'
+      : 'Solar panels (mock)';
   return (
     <motion.div
       initial={{ x: 24, opacity: 0 }}
@@ -55,14 +67,42 @@ export default function HomeScenePanel({
         </div>
       )}
 
+      {project && (
+        <div className="rounded-lg border bg-background/60 p-3 space-y-1.5">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <Zap className="h-3.5 w-3.5 text-primary" /> System estimate
+          </div>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+            <span className="text-muted-foreground">Panels</span>
+            <span className="font-medium text-right">{project.panelLayout.totalPanelCount}</span>
+            <span className="text-muted-foreground">Capacity</span>
+            <span className="font-medium text-right">{project.panelLayout.totalCapacityKw.toFixed(2)} kW</span>
+            <span className="text-muted-foreground">Annual</span>
+            <span className="font-medium text-right">
+              {Math.round(project.energyEstimate.acAnnual).toLocaleString()} kWh
+            </span>
+          </div>
+        </div>
+      )}
+
+      {projectError && (
+        <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
+          Layout fetch failed: {projectError}
+        </div>
+      )}
+
       <Section title="Overlays">
         <ToggleRow
           icon={<Home className="h-4 w-4" />} label="Roof outline"
           on={overlays.roof} onChange={(v) => onToggleOverlay('roof', v)}
         />
         <ToggleRow
-          icon={<LayoutGrid className="h-4 w-4" />} label="Solar panels (mock)"
-          on={overlays.panels} onChange={(v) => onToggleOverlay('panels', v)}
+          icon={layoutLoading
+            ? <Loader2 className="h-4 w-4 animate-spin" />
+            : <LayoutGrid className="h-4 w-4" />}
+          label={panelsLabel}
+          on={overlays.panels}
+          onChange={(v) => onToggleOverlay('panels', v)}
         />
         <ToggleRow
           icon={<Ruler className="h-4 w-4" />} label="Measurements"

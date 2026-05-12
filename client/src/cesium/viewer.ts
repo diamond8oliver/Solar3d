@@ -17,6 +17,15 @@ export async function initViewer(container: HTMLElement): Promise<ViewerHandle> 
   const ionTokenAvailable = Boolean(ionToken && ionToken.length > 20);
   if (ionTokenAvailable) Cesium.Ion.defaultAccessToken = ionToken!;
 
+  // Use ESRI World Imagery directly instead of Cesium ion's default imagery.
+  // Ion-served Bing tiles have intermittently failed to decode in dev; ESRI
+  // tiles are free, auth-less, and work without any token.
+  const esriImagery = new Cesium.UrlTemplateImageryProvider({
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    maximumLevel: 19,
+    credit: 'Tiles © Esri — Source: Esri, Maxar, Earthstar Geographics, CNES/Airbus DS, USDA, USGS, AeroGRID, IGN, and the GIS User Community',
+  });
+
   const viewer = new Cesium.Viewer(container, {
     animation: false,
     timeline: false,
@@ -28,6 +37,7 @@ export async function initViewer(container: HTMLElement): Promise<ViewerHandle> 
     fullscreenButton: false,
     selectionIndicator: false,
     infoBox: false,
+    baseLayer: Cesium.ImageryLayer.fromProviderAsync(Promise.resolve(esriImagery), {}),
     terrain: ionTokenAvailable ? Cesium.Terrain.fromWorldTerrain() : undefined,
   });
 

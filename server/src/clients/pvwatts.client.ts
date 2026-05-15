@@ -1,5 +1,6 @@
 import { PvwattsRequest, PvwattsResponse } from '@solar3d/shared';
 import sampleData from '../fixtures/pvwatts-response.json';
+import { fetchWithRetry } from '../utils/fetch';
 
 export interface PvwattsClient {
   getEstimate(params: PvwattsRequest): Promise<PvwattsResponse>;
@@ -26,8 +27,10 @@ export class RealPvwattsClient implements PvwattsClient {
       module_type: String(params.moduleType ?? 0),
       losses: String(params.losses ?? 14.08),
     });
-    const res = await fetch(
-      `https://developer.nrel.gov/api/pvwatts/v8.json?${query}`
+    const res = await fetchWithRetry(
+      `https://developer.nrel.gov/api/pvwatts/v8.json?${query}`,
+      undefined,
+      { label: 'pvwatts' }
     );
     if (!res.ok) {
       throw new Error(`PVWatts API error: ${res.status} ${res.statusText}`);

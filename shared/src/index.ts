@@ -4,4 +4,5 @@ export * from './types/pvwatts';
 export * from './types/project';
 export * from './types/address';
 export * from './types/scene';
+export * from './types/enrichment';
 export * from './constants';

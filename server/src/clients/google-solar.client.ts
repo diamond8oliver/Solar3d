@@ -1,5 +1,6 @@
 import { SolarApiResponse } from '@solar3d/shared';
 import sampleData from '../fixtures/google-solar-response.json';
+import { fetchWithRetry } from '../utils/fetch';
 
 export interface GoogleSolarClient {
   getBuildingInsights(lat: number, lng: number): Promise<SolarApiResponse>;
@@ -19,7 +20,7 @@ export class RealGoogleSolarClient implements GoogleSolarClient {
       `https://solar.googleapis.com/v1/buildingInsights:findClosest` +
       `?location.latitude=${lat}&location.longitude=${lng}` +
       `&requiredQuality=HIGH&key=${this.apiKey}`;
-    const res = await fetch(url);
+    const res = await fetchWithRetry(url, undefined, { label: 'google-solar' });
     if (!res.ok) {
       throw new Error(`Google Solar API error: ${res.status} ${res.statusText}`);
     }

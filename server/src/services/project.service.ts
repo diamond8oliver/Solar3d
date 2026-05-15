@@ -10,6 +10,7 @@ import { GoogleSolarClient } from '../clients/google-solar.client';
 import { PvwattsClient } from '../clients/pvwatts.client';
 import { ProjectRepository } from '../repositories/project.repository';
 import { computeLayout, extractRoofPlanes, pickPanelCountForBill } from '../engine/layout';
+import { enrichmentEngine } from './enrichmentEngine';
 
 export class ProjectService {
   constructor(
@@ -78,7 +79,23 @@ export class ProjectService {
       utilityRatePerKwh: DEFAULT_UTILITY_RATE,
     };
 
-    return this.repo.save(project);
+    const saved = await this.repo.save(project);
+
+    // Fire-and-forget enrichment. Apify is NEVER on the quote-critical path:
+    // we don't await this, and we wrap it in try/catch so even synchronous
+    // queueing errors can't bubble up to the HTTP response.
+    try {
+      enrichmentEngine.enrichProject(saved.id, {
+        address: input.address,
+        lat: input.lat,
+        lng: input.lng,
+      });
+    } catch (err) {
+      // Defensive — enrichmentEngine.enrichProject already swallows internally.
+      console.error('[project.service] enrichment queue failed (ignored):', err);
+    }
+
+    return saved;
   }
 
   async getProject(id: string): Promise<Project | null> {

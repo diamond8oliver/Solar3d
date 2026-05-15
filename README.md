@@ -52,29 +52,31 @@ USE_MOCK_APIS=false
 
 > Handoff notes for any AI or contributor resuming work. Update before context runs out.
 
-**Just shipped (2026-04-27):**
-- Pivoted homeowner flow from synthetic R3F roof rectangles → Cesium globe + World Terrain + OSM Buildings.
-- Photon address autocomplete (free, US-only post-filtered) behind a swappable `AutocompleteProvider` interface.
-- New components: `AddressSearch`, `HomeViewer`, `HomeScenePanel`, `ThreeLayoutShell`. New modules: `client/src/cesium/`, `client/src/maps/`.
-- Camera presets (top-down / front-left / back-right / street), overlay toggles (roof / panels / measurements), time-of-day sun slider.
-- Feature doc: [`HOME_3D_VIEWER.md`](./HOME_3D_VIEWER.md).
+**Just shipped (2026-05-14):**
+- **Camera + sizing batch.** `HomeScene.setCameraTarget` + `refreshGroundHeight` (sampleTerrainMostDetailed) so low-angle presets sit on the rooftop. Threaded `Project.buildingCenter` (Google Solar `building.center`) end-to-end so the camera lands on the actual roof, not the geocoded street point. `pickPanelCountForBill` sizes the array to ~85% of annual consumption (was using `maxArrayPanelsCount` → 77 panels for a $150 bill). Calibrated `DEFAULT_UTILITY_RATE` to PG&E NEM 3.0 ($0.40/kWh).
+- **Switched viewer to Google Photorealistic 3D Tiles** (real photogrammetry of the home) with ESRI imagery + OSM Buildings as fallback when ion token absent. Resolved cesium Build dir from workspace root so `/cesium/*` assets stop falling through to the SPA HTML.
+- **Backend infra batch.** zod env validation in `server/src/config.ts`. New `server/src/utils/fetch.ts` (`fetchWithRetry` — per-attempt timeout, exponential backoff + jitter, retries on 429 + 5xx, labeled `FetchError`). Refactored google-solar + pvwatts clients to use it.
+- **Apify async enrichment layer.** `ApifyActorRunner` interface + `HttpApifyActorRunner` (run-sync-get-dataset-items via fetchWithRetry) + `NoopApifyActorRunner`. `EnrichmentEngine` with per-dimension `safeRun` so one bad actor cannot kill siblings. Adapter functions normalize vendor payloads into internal `IncentiveProgram` / `LocalInstaller` / `MarketSignal` types. Fire-and-forget from `ProjectService.createProject` after `repo.save` — quote-critical path is untouched. New route `GET /api/projects/:id/enrichment` for frontend polling.
 
 **Immediate:**
-- Drop a free [Cesium ion token](https://cesium.com/ion) into `client/.env` to light up terrain + 3D buildings (the viewer works without it but looks flat).
+- Drop a free [Cesium ion token](https://cesium.com/ion) into `client/.env` as `VITE_CESIUM_ION_TOKEN=…` to light up Google Photorealistic 3D Tiles. Without it the globe falls back to ESRI imagery + OSM Buildings.
+- Set `APIFY_TOKEN` in `.env` and swap the placeholder actor IDs in `server/src/services/enrichmentEngine.ts` (`'placeholder/incentives'` etc.) for real Apify actor IDs.
+- Replace `InMemoryEnrichmentRepository` with a durable adapter (SQLite for single-instance, Postgres for multi-instance). Same `EnrichmentRepository` interface — mechanical swap.
+- Frontend: poll `GET /api/projects/:id/enrichment` and render incentives / installers / market signals once the status flips to `succeeded`. Surface `disabled` and `failed` states explicitly.
 - Tighten OSM Buildings highlight: current style condition is loose — pick the building under the hit point with `viewer.scene.pick` instead of bbox math.
-- Wire panel overlay to the existing `/api/projects` `PanelLayout` so the "panels" toggle shows the real layout-engine output instead of stub rectangles.
 - Mobile: Cesium is desktop-only right now. Add a "best on desktop" notice for `<lg` viewports.
 
 **Short-term:**
+- Caching layer for Google Solar + PVWatts keyed on normalized address + assumptions hash (per `integration-architecture.md`). Repeated identical addresses currently re-hit the providers.
 - Migrate `/sales` page off the legacy `components/three/` viewer onto a Cesium-rendered project list with thumbnails — then delete `components/three/`.
 - Persist `AddressRecord` on the server (extend `ProjectRepository`) so `/quote/:id` can restore a saved scene.
-- Real Google Solar API + PVWatts integration behind `USE_MOCK_APIS=false`.
 - Auth + multi-tenancy (currently zero — every endpoint public).
-- Tests: Vitest for `server/src/engine/layout.ts` (math-heavy, currently zero coverage).
+- Tests: Vitest for `server/src/engine/layout.ts` (math-heavy, zero coverage). Add adapter tests for `enrichmentEngine.ts` so future actor swaps don't silently regress normalization.
 
 **Blockers / open questions:**
 - Google Places vs Photon long-term — Places has paid API but nicer suggestion ranking. Decide before scaling user input.
 - Cesium ion free tier quota — fine for dev, need to check at production traffic.
+- Real Apify actor selection — `placeholder/*` IDs need to be replaced with vetted actors per dimension before enrichment produces real data.
 
 **Environment setup required:**
 - Node 20+, run `npm install` from repo root.

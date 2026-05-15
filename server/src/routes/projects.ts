@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { ProjectService } from '../services/project.service';
+import { enrichmentEngine } from '../services/enrichmentEngine';
 
 type Params = Record<string, string>;
 
@@ -38,6 +39,19 @@ export function createProjectsRouter(service: ProjectService): Router {
       return;
     }
     res.json(project);
+  });
+
+  // Enrichment is fire-and-forget on createProject. Frontend polls this to
+  // pick up incentives/installers/market signals once the actors finish.
+  // Returns 404 only if the projectId is unknown to the engine — a `disabled`
+  // or `running` status is still a 200.
+  router.get('/projects/:id/enrichment', async (req: Request<Params>, res: Response) => {
+    const enrichment = await enrichmentEngine.getEnrichment(req.params.id);
+    if (!enrichment) {
+      res.status(404).json({ error: 'Enrichment not found for project' });
+      return;
+    }
+    res.json(enrichment);
   });
 
   router.post('/projects/:id/share', async (req: Request<Params>, res: Response) => {

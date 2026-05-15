@@ -18,6 +18,32 @@ interface LayoutOptions {
 }
 
 /**
+ * Size the system to the customer's bill, not the roof maximum.
+ *
+ * `solarPotential.maxArrayPanelsCount` is the physical capacity (every panel
+ * that fits on the roof). Installers quote 80–85% of annual consumption (NEM
+ * 3.0 sweet spot — exports pay ~75% less, so oversizing hurts payback). We
+ * pick the smallest `solarPanelConfigs` entry whose yearlyEnergyDcKwh covers
+ * the target. Returns `null` if no inputs were provided (callers fall back
+ * to maxArrayPanelsCount).
+ */
+export function pickPanelCountForBill(
+  solarPotential: SolarPotential,
+  monthlyBillUsd: number,
+  utilityRatePerKwh: number,
+  offsetTarget: number,
+): number | null {
+  if (!monthlyBillUsd || !utilityRatePerKwh) return null;
+  if (!solarPotential.solarPanelConfigs?.length) return null;
+  const annualConsumptionKwh = (monthlyBillUsd * 12) / utilityRatePerKwh;
+  const targetKwh = annualConsumptionKwh * offsetTarget;
+  const sorted = [...solarPotential.solarPanelConfigs]
+    .sort((a, b) => a.panelsCount - b.panelsCount);
+  const match = sorted.find((c) => c.yearlyEnergyDcKwh >= targetKwh);
+  return (match ?? sorted[sorted.length - 1]).panelsCount;
+}
+
+/**
  * Convert geographic roof segments to local 3D coordinates, then grid-fill
  * panels on the best-oriented faces. Returns a complete PanelLayout.
  */

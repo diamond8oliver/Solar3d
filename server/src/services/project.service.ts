@@ -4,11 +4,12 @@ import {
   CreateProjectInput,
   DEFAULT_UTILITY_RATE,
   DEFAULT_SYSTEM_LOSSES,
+  DEFAULT_OFFSET_TARGET,
 } from '@solar3d/shared';
 import { GoogleSolarClient } from '../clients/google-solar.client';
 import { PvwattsClient } from '../clients/pvwatts.client';
 import { ProjectRepository } from '../repositories/project.repository';
-import { computeLayout, extractRoofPlanes } from '../engine/layout';
+import { computeLayout, extractRoofPlanes, pickPanelCountForBill } from '../engine/layout';
 
 export class ProjectService {
   constructor(
@@ -22,8 +23,16 @@ export class ProjectService {
     const building = await this.solarClient.getBuildingInsights(input.lat, input.lng);
     const sp = building.solarPotential;
 
-    // 2. Compute panel layout
-    const layout = computeLayout(sp, building.center);
+    // 2. Size the system to the customer's bill (NEM 3.0 sweet spot at 85%
+    //    offset), then compute the panel layout. If no bill is provided the
+    //    layout engine falls back to maxArrayPanelsCount.
+    const maxPanels = pickPanelCountForBill(
+      sp,
+      input.monthlyBillUsd,
+      DEFAULT_UTILITY_RATE,
+      DEFAULT_OFFSET_TARGET,
+    ) ?? undefined;
+    const layout = computeLayout(sp, building.center, { maxPanels });
 
     // 3. Get production estimate from PVWatts
     // Use the dominant segment's tilt/azimuth (first in sorted order = best)
@@ -52,6 +61,9 @@ export class ProjectService {
       address: input.address,
       lat: input.lat,
       lng: input.lng,
+      buildingCenter: building.center
+        ? { lat: building.center.latitude, lng: building.center.longitude }
+        : null,
       createdAt: new Date().toISOString(),
       shareToken: null,
       roofPlanes,

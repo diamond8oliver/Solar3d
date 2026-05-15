@@ -55,41 +55,99 @@ export class HomeScene {
    * upstream). Two "123 Main St" entries in different cities resolve to
    * different lat/lngs, so the camera always lands on the right house.
    */
+  /**
+   * Override for the camera focus point. Set from the server's
+   * `Project.buildingCenter` (Google Solar's rooftop centroid) — more accurate
+   * than the geocoded address lat/lng, which can land on the street or a
+   * neighbor's parcel.
+   */
+  private cameraTarget: { lat: number; lng: number } | null = null;
+
+  /** Cached terrain height at the current target, in meters above ellipsoid. */
+  private targetGroundHeight = 0;
+
+  setCameraTarget(target: { lat: number; lng: number } | null) {
+    this.cameraTarget = target;
+  }
+
   async focusHome(addr: AddressRecord, preset: CameraPreset = 'oblique-front-left') {
     this.currentAddress = addr;
     this.highlightHomeBuilding(addr);
+    await this.refreshGroundHeight();
     await this.flyCameraToPreset(addr, preset);
   }
 
-  flyCameraToPreset(addr: AddressRecord, preset: CameraPreset): Promise<void> {
-    const { lat, lng } = addr.location;
+  /**
+   * Sample terrain at the camera target so the bounding sphere sits on the
+   * actual rooftop level instead of the WGS84 ellipsoid (which can be tens of
+   * meters below ground — that's why low-angle presets used to fly through
+   * the earth).
+   */
+  private async refreshGroundHeight() {
+    const target = this.resolveTarget();
+    if (!target) return;
+    if (!this.handle.viewer.terrainProvider
+        || this.handle.viewer.terrainProvider instanceof Cesium.EllipsoidTerrainProvider) {
+      this.targetGroundHeight = 0;
+      return;
+    }
+    try {
+      const [sample] = await Cesium.sampleTerrainMostDetailed(
+        this.handle.viewer.terrainProvider,
+        [Cesium.Cartographic.fromDegrees(target.lng, target.lat)],
+      );
+      this.targetGroundHeight = sample.height ?? 0;
+    } catch (err) {
+      console.warn('[cesium] sampleTerrainMostDetailed failed', err);
+      this.targetGroundHeight = 0;
+    }
+  }
+
+  private resolveTarget(): { lat: number; lng: number } | null {
+    if (this.cameraTarget) return this.cameraTarget;
+    if (this.currentAddress) return this.currentAddress.location;
+    return null;
+  }
+
+  flyCameraToPreset(_addr: AddressRecord, preset: CameraPreset): Promise<void> {
+    const target = this.resolveTarget();
+    if (!target) return Promise.resolve();
+    const { lat, lng } = target;
+
+    // Presets pitch steeply enough that camera altitude (range × |sin pitch|)
+    // is always above terrain. Street view used to be -8°/60m which put the
+    // camera 8m above the sphere centre — below the rooftop. -25°/80m clears
+    // a typical residence and still feels like a sidewalk perspective.
     const presets: Record<CameraPreset, { offset: Cesium.HeadingPitchRange }> = {
       'top-down': {
-        offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-89), 250),
+        offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-89), 180),
       },
       'oblique-front-left': {
         offset: new Cesium.HeadingPitchRange(
-          Cesium.Math.toRadians(45), Cesium.Math.toRadians(-30), 220,
+          Cesium.Math.toRadians(45), Cesium.Math.toRadians(-30), 160,
         ),
       },
       'oblique-back-right': {
         offset: new Cesium.HeadingPitchRange(
-          Cesium.Math.toRadians(225), Cesium.Math.toRadians(-30), 220,
+          Cesium.Math.toRadians(225), Cesium.Math.toRadians(-30), 160,
         ),
       },
       street: {
         offset: new Cesium.HeadingPitchRange(
-          Cesium.Math.toRadians(0), Cesium.Math.toRadians(-8), 60,
+          Cesium.Math.toRadians(0), Cesium.Math.toRadians(-25), 80,
         ),
       },
     };
 
     return new Promise((resolve) => {
       this.handle.viewer.camera.flyToBoundingSphere(
-        new Cesium.BoundingSphere(Cesium.Cartesian3.fromDegrees(lng, lat, 0), 25),
+        new Cesium.BoundingSphere(
+          Cesium.Cartesian3.fromDegrees(lng, lat, this.targetGroundHeight),
+          20,
+        ),
         {
           offset: presets[preset].offset,
-          duration: 3.0,
+          duration: 2.5,
           complete: () => resolve(),
         },
       );
@@ -107,23 +165,10 @@ export class HomeScene {
     }
 
     const { lat, lng } = addr.location;
-    const tileset = this.handle.osmBuildingsTileset;
-    if (tileset) {
-      tileset.style = new Cesium.Cesium3DTileStyle({
-        color: {
-          conditions: [
-            // Within ~12m of the home → highlight color.
-            [`distance(\${feature['cesium#estimatedHeight']}, 0) >= 0 && \
-              abs($\{feature.longitude} - ${lng}) < 0.00012 && \
-              abs($\{feature.latitude} - ${lat}) < 0.00010`,
-              'color("#22d3ee", 0.85)'],
-            ['true', 'color("white")'],
-          ],
-        },
-      });
-    }
-
-    // Always also draw the fallback footprint glow — works without ion too.
+    // Tinting the OSM Buildings feature for the home is disabled — OSM Buildings
+    // features do not expose `feature.longitude`/`latitude` properties, so any
+    // proximity expression hits "Operator '-' requires vector or number" at
+    // evaluateMinus. The ground ellipse below marks the home regardless.
     this.highlightEntity = this.handle.viewer.entities.add({
       name: 'home-highlight',
       position: Cesium.Cartesian3.fromDegrees(lng, lat, 0),

@@ -33,6 +33,12 @@ export interface Project {
   address: string;
   lat: number;
   lng: number;
+  /**
+   * Roof centroid from Google Solar API (`building.center`). More accurate
+   * than the geocoded address lat/lng — the camera focuses on this so the
+   * 3D viewer lands on the actual rooftop rather than a neighbor's parcel.
+   */
+  buildingCenter: { lat: number; lng: number } | null;
   createdAt: string;
   shareToken: string | null;
   roofPlanes: RoofPlane[];

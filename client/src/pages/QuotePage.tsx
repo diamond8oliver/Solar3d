@@ -87,6 +87,7 @@ export default function QuotePage() {
         overlays={state.overlaysEnabled}
         timeOfDayHours={state.timeOfDayHours}
         panelLayout={project?.panelLayout ?? null}
+        buildingCenter={project?.buildingCenter ?? null}
         onReady={handleReady}
       />
       <HomeScenePanel

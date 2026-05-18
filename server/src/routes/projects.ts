@@ -9,7 +9,7 @@ export function createProjectsRouter(service: ProjectService): Router {
 
   router.post('/projects', async (req: Request, res: Response) => {
     try {
-      const { address, lat, lng, monthlyBillUsd } = req.body;
+      const { address, lat, lng, monthlyBillUsd, state } = req.body;
       if (!address || lat == null || lng == null) {
         res.status(400).json({ error: 'address, lat, and lng are required' });
         return;
@@ -19,6 +19,7 @@ export function createProjectsRouter(service: ProjectService): Router {
         lat: Number(lat),
         lng: Number(lng),
         monthlyBillUsd: Number(monthlyBillUsd) || 150,
+        state: typeof state === 'string' && state.length > 0 ? state : undefined,
       });
       res.status(201).json(project);
     } catch (err) {

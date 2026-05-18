@@ -44,7 +44,10 @@ export class HomeScene {
     if (!this.currentAddress) return [];
     if (name === 'panels' && this.currentLayout) {
       return panelsOverlayFromLayout(
-        this.handle.viewer, this.currentAddress, this.currentLayout,
+        this.handle.viewer,
+        this.currentAddress,
+        this.currentLayout,
+        this.targetGroundHeight,
       );
     }
     return OVERLAY_FACTORIES[name](this.handle.viewer, this.currentAddress);

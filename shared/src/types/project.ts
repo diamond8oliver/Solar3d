@@ -53,4 +53,10 @@ export interface CreateProjectInput {
   lat: number;
   lng: number;
   monthlyBillUsd: number;
+  /**
+   * Two-letter US state code (e.g. "CA"). Optional; when present it is
+   * forwarded to the enrichment engine to scope DSIRE / installer-directory
+   * actor queries. Quote math does not use it.
+   */
+  state?: string;
 }

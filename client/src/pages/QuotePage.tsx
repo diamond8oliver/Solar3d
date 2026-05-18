@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
-  AddressRecord, CameraPreset, HomeSceneState, OverlayName, Project,
+  CameraPreset, HomeSceneState, OverlayName, Project,
 } from '@solar3d/shared';
 import { DEFAULT_SCENE_STATE } from '@solar3d/shared';
-import AddressSearch from '../components/AddressSearch';
+import AddressSearch, { type AddressConfirmation } from '../components/AddressSearch';
 import HomeViewer from '../components/HomeViewer';
 import HomeScenePanel from '../components/HomeScenePanel';
 import ThreeLayoutShell from '../components/ThreeLayoutShell';
@@ -14,21 +14,23 @@ const DEFAULT_MONTHLY_BILL_USD = 150;
 
 export default function QuotePage() {
   const [state, setState] = useState<HomeSceneState>(DEFAULT_SCENE_STATE);
+  const [monthlyBillUsd, setMonthlyBillUsd] = useState<number>(DEFAULT_MONTHLY_BILL_USD);
   const [project, setProject] = useState<Project | null>(null);
   const [projectError, setProjectError] = useState<string | null>(null);
   const sceneRef = useRef<HomeScene | null>(null);
 
-  const handleConfirm = (address: AddressRecord) => {
+  const handleConfirm = ({ address, monthlyBillUsd: bill }: AddressConfirmation) => {
     setProject(null);
     setProjectError(null);
+    setMonthlyBillUsd(bill);
     setState((s) => ({ ...s, address, loading: true }));
   };
 
-  // Fire `/api/projects` whenever a new address is confirmed.
+  // Fire `/api/projects` whenever a new address (or bill) is confirmed.
   useEffect(() => {
     if (!state.address) return;
     const controller = new AbortController();
-    createProject(state.address, DEFAULT_MONTHLY_BILL_USD, controller.signal)
+    createProject(state.address, monthlyBillUsd, controller.signal)
       .then((p) => {
         if (!controller.signal.aborted) setProject(p);
       })
@@ -40,7 +42,7 @@ export default function QuotePage() {
         );
       });
     return () => controller.abort();
-  }, [state.address?.placeId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [state.address?.placeId, monthlyBillUsd]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleReady = useCallback((scene: HomeScene, ionTokenAvailable: boolean) => {
     sceneRef.current = scene;

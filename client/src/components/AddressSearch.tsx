@@ -1,14 +1,26 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sun, MapPin, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
+import { Sun, MapPin, ArrowRight, Loader2, AlertCircle, DollarSign } from 'lucide-react';
 import type { AddressRecord, AddressSuggestion } from '@solar3d/shared';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAddressAutocomplete } from '../hooks/useAddressAutocomplete';
 
-interface Props {
-  onConfirm: (address: AddressRecord) => void;
+export interface AddressConfirmation {
+  address: AddressRecord;
+  monthlyBillUsd: number;
 }
+
+interface Props {
+  onConfirm: (payload: AddressConfirmation) => void;
+}
+
+// Default bill if the user leaves the field blank. Matches the server-side
+// default in createProject; keeping them in sync means an empty input
+// produces the same array size as not passing the field at all.
+const DEFAULT_BILL_USD = 150;
+const MIN_BILL_USD = 20;
+const MAX_BILL_USD = 2000;
 
 /**
  * Hero + autocomplete + summary card.
@@ -22,6 +34,12 @@ export default function AddressSearch({ onConfirm }: Props) {
     useAddressAutocomplete();
   const [picked, setPicked] = useState<AddressRecord | null>(null);
   const [resolving, setResolving] = useState(false);
+  const [billInput, setBillInput] = useState<string>(String(DEFAULT_BILL_USD));
+
+  const parsedBill = parseInt(billInput, 10);
+  const billValue = Number.isFinite(parsedBill) && parsedBill > 0
+    ? Math.min(MAX_BILL_USD, Math.max(MIN_BILL_USD, parsedBill))
+    : DEFAULT_BILL_USD;
 
   const handlePick = async (s: AddressSuggestion) => {
     setResolving(true);
@@ -32,6 +50,11 @@ export default function AddressSearch({ onConfirm }: Props) {
     } finally {
       setResolving(false);
     }
+  };
+
+  const handleConfirm = () => {
+    if (!picked) return;
+    onConfirm({ address: picked, monthlyBillUsd: billValue });
   };
 
   return (
@@ -129,10 +152,39 @@ export default function AddressSearch({ onConfirm }: Props) {
                   {picked.location.lat.toFixed(5)}, {picked.location.lng.toFixed(5)}
                 </div>
               </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="monthlyBill" className="flex items-center gap-2 text-sm font-medium">
+                  <DollarSign className="h-4 w-4 text-muted-foreground" />
+                  Average monthly electric bill
+                </Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
+                    $
+                  </span>
+                  <Input
+                    id="monthlyBill"
+                    type="number"
+                    inputMode="numeric"
+                    min={MIN_BILL_USD}
+                    max={MAX_BILL_USD}
+                    step={10}
+                    value={billInput}
+                    onChange={(e) => setBillInput(e.target.value)}
+                    onBlur={() => setBillInput(String(billValue))}
+                    className="h-11 pl-7"
+                    placeholder={String(DEFAULT_BILL_USD)}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Drives system sizing. Higher bill → more panels modeled on the roof.
+                </p>
+              </div>
+
               <button
                 type="button"
                 disabled={resolving}
-                onClick={() => onConfirm(picked)}
+                onClick={handleConfirm}
                 className="w-full h-12 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-lg flex items-center justify-center gap-2 transition-colors"
               >
                 View in 3D

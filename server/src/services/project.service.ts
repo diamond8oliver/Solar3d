@@ -89,6 +89,7 @@ export class ProjectService {
         address: input.address,
         lat: input.lat,
         lng: input.lng,
+        state: input.state,
       });
     } catch (err) {
       // Defensive — enrichmentEngine.enrichProject already swallows internally.

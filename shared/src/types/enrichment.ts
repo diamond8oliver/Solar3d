@@ -67,10 +67,32 @@ export interface MarketSignal {
   source: string;
 }
 
+/**
+ * PVGIS-style solar resource sample. Supplements PVWatts with EU JRC data
+ * (irradiance + optimal tilt/azimuth at the lat/lng). Always per-project —
+ * not regional.
+ */
+export interface SolarIrradianceSample {
+  id: string;
+  lat: number;
+  lng: number;
+  /** Annual energy yield estimate (kWh per kWp installed). */
+  annualKwhPerKwp?: number;
+  /** Per-month kWh per kWp, length 12 (Jan→Dec) if present. */
+  monthlyKwhPerKwp?: number[];
+  /** Optimal panel tilt for this location (degrees from horizontal). */
+  optimalTiltDeg?: number;
+  /** Optimal panel azimuth (degrees, 180 = south in northern hemisphere). */
+  optimalAzimuthDeg?: number;
+  source: string;
+  asOf: string;
+}
+
 export interface ProjectEnrichment {
   projectId: string;
   status: EnrichmentStatus;
   incentives: IncentiveProgram[];
   installers: LocalInstaller[];
   marketSignals: MarketSignal[];
+  solarIrradiance: SolarIrradianceSample[];
 }

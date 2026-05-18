@@ -88,19 +88,32 @@ export function panelsOverlay(viewer: Cesium.Viewer, addr: AddressRecord): Cesiu
  * fine; for real Google Solar the building.center may drift a few meters but
  * the panel cluster still lands on the home.
  *
- * Each panel becomes a 4-corner ground polygon. Pitch is intentionally
- * dropped — we clamp to terrain rather than raise to roof height, which
- * sidesteps having to align with OSM building roof faces.
+ * Each panel becomes a 4-corner polygon lifted to roof height. `groundHeight`
+ * is the sampled terrain elevation under the home (from
+ * sampleTerrainMostDetailed); we add `p.centerY` (the layout engine's
+ * per-panel height above ground) plus a small offset so panels sit on the
+ * roof rather than clip into it. `extrudedHeight` gives the panels a few
+ * centimeters of depth so they read as solid 3D boxes instead of decals.
+ *
+ * Pitch is intentionally dropped — the polygon is horizontal at the lifted
+ * height. Tilt would need per-panel triangulation against the roof plane,
+ * which is a v2 problem.
  */
 export function panelsOverlayFromLayout(
   viewer: Cesium.Viewer,
   addr: AddressRecord,
   layout: PanelLayout,
+  groundHeight = 0,
 ): Cesium.Entity[] {
   const { lat: baseLat, lng: baseLng } = addr.location;
   const cosLat = Math.cos((baseLat * Math.PI) / 180);
   const halfW = layout.panelWidthMeters / 2;
   const halfH = layout.panelHeightMeters / 2;
+
+  // 30cm float above the layout's roof height so panels read as mounted,
+  // not embedded. PANEL_DEPTH gives them ~4cm of thickness.
+  const ROOF_LIFT_M = 0.3;
+  const PANEL_DEPTH_M = 0.04;
 
   const out: Cesium.Entity[] = [];
   for (const p of layout.panels) {
@@ -126,16 +139,20 @@ export function panelsOverlayFromLayout(
       positions.push(lng, lat);
     }
 
+    const panelBaseHeight = groundHeight + p.centerY + ROOF_LIFT_M;
+
     out.push(viewer.entities.add({
       name: `panel-${p.id}`,
       polygon: {
         hierarchy: new Cesium.PolygonHierarchy(
           Cesium.Cartesian3.fromDegreesArray(positions),
         ),
-        material: Cesium.Color.fromCssColorString('#1e3a8a').withAlpha(0.9),
+        height: panelBaseHeight,
+        extrudedHeight: panelBaseHeight + PANEL_DEPTH_M,
+        material: Cesium.Color.fromCssColorString('#0f172a').withAlpha(0.95),
         outline: true,
-        outlineColor: Cesium.Color.fromCssColorString('#60a5fa'),
-        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+        outlineColor: Cesium.Color.fromCssColorString('#475569'),
+        outlineWidth: 1,
       },
     }));
   }

@@ -19,6 +19,9 @@ export async function createProject(
       lat: address.location.lat,
       lng: address.location.lng,
       monthlyBillUsd,
+      // Two-letter state — forwarded to enrichment so DSIRE / installer
+      // actors scope queries instead of running for the full US.
+      state: address.addressComponents.state || undefined,
     }),
     signal,
   });

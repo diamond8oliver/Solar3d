@@ -10,6 +10,7 @@ import {
   MarketSignal,
   MarketSignalKind,
   ProjectEnrichment,
+  SolarIrradianceSample,
 } from '@solar3d/shared';
 import {
   ApifyActorRunner,
@@ -158,6 +159,48 @@ export function adaptMarketSignals(raw: unknown[]): MarketSignal[] {
     .filter((x): x is MarketSignal => x !== null);
 }
 
+/**
+ * PVGIS-style payload from velvety_bedbug/pvgis-solar-scraper. The actor
+ * returns one dataset item per (lat, lng) query. Field names vary across
+ * versions, so we accept the most common shapes and ignore the rest.
+ */
+export function adaptSolarIrradiance(raw: unknown[]): SolarIrradianceSample[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item, idx): SolarIrradianceSample | null => {
+      if (!item || typeof item !== 'object') return null;
+      const r = item as Record<string, unknown>;
+
+      const lat = asNumber(r.lat) ?? asNumber(r.latitude);
+      const lng = asNumber(r.lng) ?? asNumber(r.longitude) ?? asNumber(r.lon);
+      if (lat === undefined || lng === undefined) return null;
+
+      const monthlyRaw = r.monthlyKwhPerKwp ?? r.monthly;
+      const monthly = Array.isArray(monthlyRaw)
+        ? monthlyRaw
+            .map((v) => asNumber(v))
+            .filter((v): v is number => v !== undefined)
+        : undefined;
+
+      return {
+        id: asString(r.id, `irradiance-${idx}`),
+        lat,
+        lng,
+        annualKwhPerKwp:
+          asNumber(r.annualKwhPerKwp) ??
+          asNumber(r.annual) ??
+          asNumber(r.yearlyKwhPerKwp),
+        monthlyKwhPerKwp: monthly && monthly.length === 12 ? monthly : undefined,
+        optimalTiltDeg: asNumber(r.optimalTiltDeg) ?? asNumber(r.optimalTilt),
+        optimalAzimuthDeg:
+          asNumber(r.optimalAzimuthDeg) ?? asNumber(r.optimalAzimuth),
+        source: asString(r.source, 'pvgis'),
+        asOf: asString(r.asOf) || nowIso(),
+      };
+    })
+    .filter((x): x is SolarIrradianceSample => x !== null);
+}
+
 // ---------------------------------------------------------------------------
 // Engine
 // ---------------------------------------------------------------------------
@@ -166,13 +209,24 @@ export interface EnrichmentContext {
   lat: number;
   lng: number;
   address: string;
+  /**
+   * Two-letter US state code. Used to scope DSIRE / installer-directory
+   * actors. Optional — when missing the actors fall back to running for
+   * the full US which is slower and noisier.
+   */
+  state?: string;
 }
 
-// Placeholder actor IDs — swap for real Apify actor IDs once they exist.
+/**
+ * Real Apify actor IDs. The `~` form (`user~actor-name`) is the public
+ * slug; the bare ID form (`SXuQd0O7VrW2whBxT`) is the internal actor id —
+ * both are accepted by `/v2/acts/{actorId}/run-sync-get-dataset-items`.
+ */
 const ACTOR_IDS = {
-  incentives: 'placeholder/incentives',
-  installers: 'placeholder/installers',
-  marketSignals: 'placeholder/market-signals',
+  incentives: 'jungle_synthesizer~dsire-energy-incentives-crawler',
+  installers: 'SXuQd0O7VrW2whBxT',
+  marketSignals: 'zjKUZEAWlWalVUOjd',
+  solarIrradiance: 'Xxyuc9PC1XW1ZZMjn',
 } as const;
 
 export class EnrichmentEngine {
@@ -197,6 +251,7 @@ export class EnrichmentEngine {
           incentives: [],
           installers: [],
           marketSignals: [],
+          solarIrradiance: [],
         };
         // Repo writes are async but we don't block — the fire-and-forget
         // contract applies here too.
@@ -216,6 +271,7 @@ export class EnrichmentEngine {
         incentives: [],
         installers: [],
         marketSignals: [],
+        solarIrradiance: [],
       };
 
       void this.repo
@@ -251,28 +307,54 @@ export class EnrichmentEngine {
     ctx: EnrichmentContext,
     startedAt: string,
   ): Promise<void> {
-    const actorInput = {
+    // Per-actor input shapes. The DSIRE + installer-directory actors expect
+    // a `stateAbbreviations` array; PVGIS wants lat/lng; the buseta market
+    // scraper takes a generic input. When `state` is missing we omit the
+    // scoping field rather than send a bogus value — the actor's own
+    // default handles "whole US."
+    const stateScope = ctx.state ? [ctx.state.toUpperCase()] : undefined;
+
+    const incentivesInput = {
+      ...(stateScope ? { stateAbbreviations: stateScope } : {}),
+      address: ctx.address,
+    };
+    const installersInput = {
+      ...(stateScope ? { states: stateScope } : {}),
+      address: ctx.address,
       lat: ctx.lat,
       lng: ctx.lng,
+    };
+    const marketInput = {
       address: ctx.address,
+      lat: ctx.lat,
+      lng: ctx.lng,
+    };
+    const irradianceInput = {
+      lat: ctx.lat,
+      lng: ctx.lng,
     };
 
     // Each dimension has its own try/catch — one slow/broken actor must not
     // kill the others. Failures are logged and the dimension stays empty.
     const incentives = await this._safeRun(
       ACTOR_IDS.incentives,
-      actorInput,
+      incentivesInput,
       adaptIncentives,
     );
     const installers = await this._safeRun(
       ACTOR_IDS.installers,
-      actorInput,
+      installersInput,
       adaptInstallers,
     );
     const marketSignals = await this._safeRun(
       ACTOR_IDS.marketSignals,
-      actorInput,
+      marketInput,
       adaptMarketSignals,
+    );
+    const solarIrradiance = await this._safeRun(
+      ACTOR_IDS.solarIrradiance,
+      irradianceInput,
+      adaptSolarIrradiance,
     );
 
     const finishedAt = nowIso();
@@ -282,6 +364,7 @@ export class EnrichmentEngine {
       incentives,
       installers,
       marketSignals,
+      solarIrradiance,
     };
     await this.repo.save(record);
   }
@@ -324,6 +407,7 @@ export class EnrichmentEngine {
       incentives: [],
       installers: [],
       marketSignals: [],
+      solarIrradiance: [],
     };
     try {
       await this.repo.save(record);

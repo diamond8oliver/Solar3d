@@ -82,9 +82,12 @@ export function computeLayout(
   // Build a map of per-panel energy from the API's solarPanels array
   const panelEnergyBySegment = new Map<number, number[]>();
   for (const sp of solarPotential.solarPanels) {
-    const list = panelEnergyBySegment.get(sp.segmentIndex) || [];
+    let list = panelEnergyBySegment.get(sp.segmentIndex);
+    if (!list) {
+      list = [];
+      panelEnergyBySegment.set(sp.segmentIndex, list);
+    }
     list.push(sp.yearlyEnergyDcKwh);
-    panelEnergyBySegment.set(sp.segmentIndex, list);
   }
 
   const allPanels: PanelPosition[] = [];

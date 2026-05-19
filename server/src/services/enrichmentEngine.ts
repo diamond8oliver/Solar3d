@@ -229,6 +229,27 @@ const ACTOR_IDS = {
   solarIrradiance: 'Xxyuc9PC1XW1ZZMjn',
 } as const;
 
+/**
+ * Two-letter US state code → full name. The buseta market-signal scraper
+ * declares `states` as full names ("California"), while DSIRE + EnergySage
+ * declare codes ("CA"). Keeping the map local avoids a dep just for this.
+ */
+const US_STATE_CODE_TO_NAME: Record<string, string> = {
+  AL: 'Alabama', AK: 'Alaska', AZ: 'Arizona', AR: 'Arkansas',
+  CA: 'California', CO: 'Colorado', CT: 'Connecticut', DE: 'Delaware',
+  DC: 'District of Columbia', FL: 'Florida', GA: 'Georgia', HI: 'Hawaii',
+  ID: 'Idaho', IL: 'Illinois', IN: 'Indiana', IA: 'Iowa', KS: 'Kansas',
+  KY: 'Kentucky', LA: 'Louisiana', ME: 'Maine', MD: 'Maryland',
+  MA: 'Massachusetts', MI: 'Michigan', MN: 'Minnesota', MS: 'Mississippi',
+  MO: 'Missouri', MT: 'Montana', NE: 'Nebraska', NV: 'Nevada',
+  NH: 'New Hampshire', NJ: 'New Jersey', NM: 'New Mexico', NY: 'New York',
+  NC: 'North Carolina', ND: 'North Dakota', OH: 'Ohio', OK: 'Oklahoma',
+  OR: 'Oregon', PA: 'Pennsylvania', RI: 'Rhode Island', SC: 'South Carolina',
+  SD: 'South Dakota', TN: 'Tennessee', TX: 'Texas', UT: 'Utah',
+  VT: 'Vermont', VA: 'Virginia', WA: 'Washington', WV: 'West Virginia',
+  WI: 'Wisconsin', WY: 'Wyoming',
+};
+
 export class EnrichmentEngine {
   constructor(
     private readonly runner: ApifyActorRunner,
@@ -307,55 +328,68 @@ export class EnrichmentEngine {
     ctx: EnrichmentContext,
     startedAt: string,
   ): Promise<void> {
-    // Per-actor input shapes. The DSIRE + installer-directory actors expect
-    // a `stateAbbreviations` array; PVGIS wants lat/lng; the buseta market
-    // scraper takes a generic input. When `state` is missing we omit the
-    // scoping field rather than send a bogus value — the actor's own
-    // default handles "whole US."
-    const stateScope = ctx.state ? [ctx.state.toUpperCase()] : undefined;
+    // Per-actor input shapes — each scraper has a strict schema that 400s on
+    // unknown fields, so we only forward what each actor declares. Schemas
+    // confirmed against /v2/acts/{id}/builds/default on 2026-05-18.
+    const stateCode = ctx.state ? ctx.state.toUpperCase() : undefined;
+    const stateName = stateCode ? US_STATE_CODE_TO_NAME[stateCode] : undefined;
 
+    // DSIRE: maxItems is required; stateAbbreviations scopes the crawl.
+    // sp_intended_usage is technically optional but the actor's UX gates on
+    // it — provide a real-sounding string so the crawl actually runs.
     const incentivesInput = {
-      ...(stateScope ? { stateAbbreviations: stateScope } : {}),
-      address: ctx.address,
-    };
-    const installersInput = {
-      ...(stateScope ? { states: stateScope } : {}),
-      address: ctx.address,
-      lat: ctx.lat,
-      lng: ctx.lng,
-    };
-    const marketInput = {
-      address: ctx.address,
-      lat: ctx.lat,
-      lng: ctx.lng,
-    };
-    const irradianceInput = {
-      lat: ctx.lat,
-      lng: ctx.lng,
+      maxItems: 25,
+      sp_intended_usage:
+        'Powering a homeowner-facing solar quote tool — surface state-level rebates and tax credits.',
+      ...(stateCode ? { stateAbbreviations: [stateCode] } : {}),
     };
 
-    // Each dimension has its own try/catch — one slow/broken actor must not
-    // kill the others. Failures are logged and the dimension stays empty.
-    const incentives = await this._safeRun(
-      ACTOR_IDS.incentives,
-      incentivesInput,
-      adaptIncentives,
-    );
-    const installers = await this._safeRun(
-      ACTOR_IDS.installers,
-      installersInput,
-      adaptInstallers,
-    );
-    const marketSignals = await this._safeRun(
-      ACTOR_IDS.marketSignals,
-      marketInput,
-      adaptMarketSignals,
-    );
-    const solarIrradiance = await this._safeRun(
-      ACTOR_IDS.solarIrradiance,
-      irradianceInput,
-      adaptSolarIrradiance,
-    );
+    // EnergySage installer directory: `states` is an array of two-letter
+    // codes per the schema description ("'CA', 'NY', 'TX'"). Other fields
+    // (address/lat/lng) caused 400 Bad Request — drop them.
+    const installersInput = {
+      maxItems: 25,
+      sp_intended_usage:
+        'Surfacing trusted local installers in homeowner solar quotes.',
+      ...(stateCode ? { states: [stateCode] } : {}),
+    };
+
+    // buseta solar-industry-scraper: scrape_type is REQUIRED (enum:
+    // installers | incentives | all). `states` here wants FULL state names
+    // ("California"), not codes. We pick "all" to get both review-derived
+    // installer trends and the actor's aggregate market analysis.
+    const marketInput = {
+      scrape_type: 'all',
+      get_reviews: true,
+      ai_analysis: true,
+      ...(stateName ? { states: [stateName] } : {}),
+    };
+
+    // PVGIS scraper: the field names are `latitude`/`longitude` (NOT
+    // lat/lng — that's why the first run silently returned the default
+    // (45, 8) ≈ Lake Como). peakPower keyed off the layout's actual
+    // capacity would be ideal; 1 kWp keeps the response unit-normalized.
+    const irradianceInput = {
+      latitude: ctx.lat,
+      longitude: ctx.lng,
+      peakPower: 1,
+      dataType: 'pvcalc',
+      maxItems: 12,
+    };
+
+    // Run all four dimensions in parallel — they're independent, and the
+    // buseta + DSIRE actors can each take 2-3 minutes when AI analysis or a
+    // wide state scan is involved. Each dimension has its own try/catch via
+    // _safeRun so one slow/broken actor cannot kill the others. The serial
+    // version made wall-clock = sum-of-actors which routinely exceeded the
+    // user's patience.
+    const [incentives, installers, marketSignals, solarIrradiance] =
+      await Promise.all([
+        this._safeRun(ACTOR_IDS.incentives, incentivesInput, adaptIncentives, 240_000),
+        this._safeRun(ACTOR_IDS.installers, installersInput, adaptInstallers, 180_000),
+        this._safeRun(ACTOR_IDS.marketSignals, marketInput, adaptMarketSignals, 300_000),
+        this._safeRun(ACTOR_IDS.solarIrradiance, irradianceInput, adaptSolarIrradiance, 60_000),
+      ]);
 
     const finishedAt = nowIso();
     const record: ProjectEnrichment = {
@@ -373,9 +407,14 @@ export class EnrichmentEngine {
     actorId: string,
     input: unknown,
     adapt: (raw: unknown[]) => T[],
+    timeoutMs?: number,
   ): Promise<T[]> {
     try {
-      const raw = await this.runner.runActor<unknown, unknown>(actorId, input);
+      const raw = await this.runner.runActor<unknown, unknown>(
+        actorId,
+        input,
+        timeoutMs ? { timeoutMs } : undefined,
+      );
       return adapt(raw);
     } catch (err) {
       console.warn(

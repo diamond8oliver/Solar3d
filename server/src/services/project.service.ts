@@ -1,4 +1,5 @@
 import { v4 as uuid } from 'uuid';
+import { randomBytes } from 'crypto';
 import {
   Project,
   CreateProjectInput,
@@ -111,7 +112,7 @@ export class ProjectService {
     const project = await this.repo.findById(id);
     if (!project) return null;
 
-    const token = uuid().replace(/-/g, '').slice(0, 12);
+    const token = randomBytes(16).toString('hex');
     project.shareToken = token;
     await this.repo.save(project);
     return token;

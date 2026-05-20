@@ -14,12 +14,12 @@ export const ROOF_SETBACK = 0.3;
 /**
  * Default utility rate ($/kWh).
  *
- * Calibrated to PG&E NEM 3.0 blended rates (Bay Area, 2026). The previous
- * 0.15 value matched the US average but was off by ~2.5x for California
- * customers, which made the bill→kWh inversion produce systems 2-3x too
- * large for the user's actual consumption.
+ * US residential average (EIA, late 2025). California-specific high tiers
+ * (PG&E NEM 3.0 ~$0.40) would undersize systems by 60-70% for the rest of
+ * the country, so the default stays national. State-specific override
+ * belongs in a future enrichment step keyed on `addr.addressComponents.state`.
  */
-export const DEFAULT_UTILITY_RATE = 0.40;
+export const DEFAULT_UTILITY_RATE = 0.15;
 
 /** Target percentage of annual consumption to offset (NEM 3.0 sweet spot). */
 export const DEFAULT_OFFSET_TARGET = 0.85;

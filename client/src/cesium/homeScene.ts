@@ -47,7 +47,6 @@ export class HomeScene {
         this.handle.viewer,
         this.currentAddress,
         this.currentLayout,
-        this.targetGroundHeight,
       );
     }
     return OVERLAY_FACTORIES[name](this.handle.viewer, this.currentAddress);

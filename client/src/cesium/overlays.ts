@@ -88,22 +88,16 @@ export function panelsOverlay(viewer: Cesium.Viewer, addr: AddressRecord): Cesiu
  * fine; for real Google Solar the building.center may drift a few meters but
  * the panel cluster still lands on the home.
  *
- * Each panel becomes a 4-corner polygon lifted to roof height. `groundHeight`
- * is the sampled terrain elevation under the home (from
- * sampleTerrainMostDetailed); we add `p.centerY` (the layout engine's
- * per-panel height above ground) plus a small offset so panels sit on the
- * roof rather than clip into it. `extrudedHeight` gives the panels a few
- * centimeters of depth so they read as solid 3D boxes instead of decals.
- *
- * Pitch is intentionally dropped — the polygon is horizontal at the lifted
- * height. Tilt would need per-panel triangulation against the roof plane,
- * which is a v2 problem.
+ * `p.centerY` is Google Solar's `planeHeightAtCenterMeters` — already an
+ * absolute height above the WGS84 ellipsoid. Cesium's polygon `height` is
+ * also above ellipsoid, so we use it directly (DO NOT add terrain ground
+ * height — that double-counts and floats panels into the sky). A small lift
+ * keeps panels above the roof shingles; extrudedHeight gives ~4cm depth.
  */
 export function panelsOverlayFromLayout(
   viewer: Cesium.Viewer,
   addr: AddressRecord,
   layout: PanelLayout,
-  groundHeight = 0,
 ): Cesium.Entity[] {
   const { lat: baseLat, lng: baseLng } = addr.location;
   const cosLat = Math.cos((baseLat * Math.PI) / 180);
@@ -139,7 +133,7 @@ export function panelsOverlayFromLayout(
       positions.push(lng, lat);
     }
 
-    const panelBaseHeight = groundHeight + p.centerY + ROOF_LIFT_M;
+    const panelBaseHeight = p.centerY + ROOF_LIFT_M;
 
     out.push(viewer.entities.add({
       name: `panel-${p.id}`,

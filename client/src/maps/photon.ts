@@ -66,11 +66,11 @@ export class PhotonProvider implements AutocompleteProvider {
 
     const url = new URL(PHOTON_URL);
     url.searchParams.set('q', query);
-    url.searchParams.set('limit', '8');
+    // Photon caps `limit` at 50 server-side. Ask for the max so the post-filter
+    // (US-only) leaves enough surviving rows to populate the dropdown — the
+    // previous `limit=8` + `layer=house` combo often returned 0-2 US matches.
+    url.searchParams.set('limit', '40');
     url.searchParams.set('lang', 'en');
-    // Photon does not officially support country filtering, so we post-filter.
-    // We bias toward addresses (vs POIs) by requesting the address layer.
-    url.searchParams.set('layer', 'house');
 
     let res: Response;
     try {
@@ -85,6 +85,7 @@ export class PhotonProvider implements AutocompleteProvider {
 
     return data.features
       .filter((f) => f.properties.countrycode?.toLowerCase() === 'us')
+      .slice(0, 10)
       .map((f) => ({
         id: `${f.properties.osm_type}-${f.properties.osm_id}`,
         label: formatLabel(f.properties),

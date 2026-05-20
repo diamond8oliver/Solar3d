@@ -1,5 +1,27 @@
 import * as Cesium from 'cesium';
 
+/**
+ * StrictMode mounts components twice in dev, which would race two concurrent
+ * `createGooglePhotorealistic3DTileset()` calls. The second errors with
+ * "Resource is already being fetched" and we'd fall back to the white-block
+ * OSM Buildings tileset. We dedupe via a module-level promise: every concurrent
+ * caller gets a freshly-created tileset using the already-completed metadata
+ * fetch (Cesium's internal cache makes the retry effectively free).
+ */
+let photorealLock: Promise<unknown> | null = null;
+async function createPhotorealTilesetDeduped(): Promise<Cesium.Cesium3DTileset> {
+  if (photorealLock) {
+    try { await photorealLock; } catch { /* swallow — we'll retry */ }
+  }
+  const p = Cesium.createGooglePhotorealistic3DTileset();
+  photorealLock = p;
+  try {
+    return await p;
+  } finally {
+    if (photorealLock === p) photorealLock = null;
+  }
+}
+
 export interface ViewerHandle {
   viewer: Cesium.Viewer;
   /** Google Photorealistic 3D Tiles tileset (real photogrammetry of the home). */
@@ -65,19 +87,42 @@ export async function initViewer(container: HTMLElement): Promise<ViewerHandle> 
   // Attach Google Photorealistic 3D Tiles (Cesium ion asset 2275207). This is
   // the real-world photogrammetry mesh — the user's actual house with textures.
   // Falls back to OSM Buildings (white meshes) if the asset fails to load.
+  // Two viable paths to Google Photorealistic 3D Tiles:
+  //   1. Direct via Map Tiles API — set VITE_GOOGLE_MAPS_API_KEY and Cesium
+  //      streams tiles straight from Google. Requires a domain-restricted key
+  //      with "Map Tiles API" enabled in Google Cloud Console.
+  //   2. Cesium ion proxy — default when no Google key. Requires the asset
+  //      "Google Photorealistic 3D Tiles" to be added to your ion account
+  //      (free at https://cesium.com/ion/assetdepot/2275207).
+  // We try direct first (more reliable, no ion asset-quota gate), then ion,
+  // then OSM Buildings, then nothing. Each failure logs its full reason so
+  // it's obvious which provider needs configuring.
+  const googleKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
   let photorealisticTileset: Cesium.Cesium3DTileset | null = null;
   let osmBuildingsTileset: Cesium.Cesium3DTileset | null = null;
-  if (ionTokenAvailable) {
-    try {
-      photorealisticTileset = await Cesium.createGooglePhotorealistic3DTileset();
-      viewer.scene.primitives.add(photorealisticTileset);
-    } catch (err) {
-      console.warn('[cesium] Google Photorealistic 3D Tiles failed; falling back to OSM Buildings', err);
+  const tryAddPhotoreal = async () => {
+    if (googleKey && googleKey.length > 0) {
+      Cesium.GoogleMaps.defaultApiKey = googleKey;
+      console.info('[cesium] using direct Google Map Tiles key');
+    } else {
+      console.info('[cesium] no VITE_GOOGLE_MAPS_API_KEY — falling back to Cesium ion proxy for 3D tiles');
+    }
+    photorealisticTileset = await createPhotorealTilesetDeduped();
+    viewer.scene.primitives.add(photorealisticTileset);
+    console.info('[cesium] Google Photorealistic 3D Tiles loaded');
+  };
+  try {
+    await tryAddPhotoreal();
+  } catch (err) {
+    const msg = (err as Error)?.message ?? String(err);
+    console.warn('[cesium] Google Photorealistic 3D Tiles failed:', msg, err);
+    if (ionTokenAvailable) {
       try {
         osmBuildingsTileset = await Cesium.createOsmBuildingsAsync();
         viewer.scene.primitives.add(osmBuildingsTileset);
+        console.info('[cesium] OSM Buildings fallback loaded (white block geometry)');
       } catch (err2) {
-        console.warn('[cesium] OSM Buildings also failed to load', err2);
+        console.warn('[cesium] OSM Buildings also failed:', (err2 as Error)?.message ?? String(err2));
       }
     }
   }

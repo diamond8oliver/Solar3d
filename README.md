@@ -52,13 +52,21 @@ USE_MOCK_APIS=false
 
 > Handoff notes for any AI or contributor resuming work. Update before context runs out.
 
-**Just shipped (2026-05-14):**
+**Just shipped (2026-05-20):**
+- **Homes-not-loading rendering fix.** React StrictMode double-mounted `HomeViewer`, so the second concurrent call to `Cesium.createGooglePhotorealistic3DTileset()` errored with "Resource is already being fetched" and the catch silently fell back to the white-block OSM Buildings tileset. Added a module-level promise lock in `client/src/cesium/viewer.ts` so both StrictMode mounts now load real Google photoreal tiles. Verified end-to-end via headless Chromium probe.
+- **Panel altitude double-count fixed.** `overlays.ts` was computing `groundHeight + p.centerY + 0.3` for panel polygons, but `p.centerY` (Google Solar `planeHeightAtCenterMeters`) is already absolute meters above the WGS84 ellipsoid. Panels were floating ~30m above the roof. Now uses `p.centerY + 0.3` directly.
+- **Panel count calibration.** `DEFAULT_UTILITY_RATE` reverted from $0.40 (PG&E NEM 3.0) to $0.15 (US national avg). The CA-only rate was undersizing systems by ~2.5x everywhere else. State-aware rate is a future enrichment step.
+- **Autocomplete densified.** Photon `layer=house` filter dropped — many US street addresses aren't OSM-tagged as houses. Server limit raised 8→40 with post-filter cap at 10 US results.
+- **Optional direct-Google path.** `viewer.ts` reads `VITE_GOOGLE_MAPS_API_KEY` and uses `Cesium.GoogleMaps.defaultApiKey` for direct Map Tiles API streaming as an alternative to the Cesium ion proxy.
+
+**Previously shipped (2026-05-14):**
 - **Camera + sizing batch.** `HomeScene.setCameraTarget` + `refreshGroundHeight` (sampleTerrainMostDetailed) so low-angle presets sit on the rooftop. Threaded `Project.buildingCenter` (Google Solar `building.center`) end-to-end so the camera lands on the actual roof, not the geocoded street point. `pickPanelCountForBill` sizes the array to ~85% of annual consumption (was using `maxArrayPanelsCount` → 77 panels for a $150 bill). Calibrated `DEFAULT_UTILITY_RATE` to PG&E NEM 3.0 ($0.40/kWh).
 - **Switched viewer to Google Photorealistic 3D Tiles** (real photogrammetry of the home) with ESRI imagery + OSM Buildings as fallback when ion token absent. Resolved cesium Build dir from workspace root so `/cesium/*` assets stop falling through to the SPA HTML.
 - **Backend infra batch.** zod env validation in `server/src/config.ts`. New `server/src/utils/fetch.ts` (`fetchWithRetry` — per-attempt timeout, exponential backoff + jitter, retries on 429 + 5xx, labeled `FetchError`). Refactored google-solar + pvwatts clients to use it.
 - **Apify async enrichment layer.** `ApifyActorRunner` interface + `HttpApifyActorRunner` (run-sync-get-dataset-items via fetchWithRetry) + `NoopApifyActorRunner`. `EnrichmentEngine` with per-dimension `safeRun` so one bad actor cannot kill siblings. Adapter functions normalize vendor payloads into internal `IncentiveProgram` / `LocalInstaller` / `MarketSignal` types. Fire-and-forget from `ProjectService.createProject` after `repo.save` — quote-critical path is untouched. New route `GET /api/projects/:id/enrichment` for frontend polling.
 
-**Immediate:**
+**Immediate (next session):**
+- **Finish the `/sales/:id` flythrough page** (the dashboard's destination after picking a project). Currently still uses the legacy R3F `SolarViewer` + `components/three/CameraFlythrough`. Rebuild on Cesium: Cesium-rendered project list with thumbnails on `/sales`, then a Cesium-driven flythrough on `/sales/:id` that reuses `HomeScene` + scripted camera path (orbit + low-angle pass over the panel array). Then delete `components/three/`.
 - Drop a free [Cesium ion token](https://cesium.com/ion) into `client/.env` as `VITE_CESIUM_ION_TOKEN=…` to light up Google Photorealistic 3D Tiles. Without it the globe falls back to ESRI imagery + OSM Buildings.
 - Set `APIFY_TOKEN` in `.env` and swap the placeholder actor IDs in `server/src/services/enrichmentEngine.ts` (`'placeholder/incentives'` etc.) for real Apify actor IDs.
 - Replace `InMemoryEnrichmentRepository` with a durable adapter (SQLite for single-instance, Postgres for multi-instance). Same `EnrichmentRepository` interface — mechanical swap.
